@@ -69,7 +69,7 @@ type VulkanRenderInfo struct {
 }
 
 // NewDevice create the main Vulkan object holding references to all parts of the Vulkan API
-func NewDevice(appName string, window uintptr, instanceExtensions []string) (Vulkan, error) {
+func NewDevice(appName string, instanceExtensions []string, createSurfaceFunc func(instance vk.Instance, window uintptr) vk.Surface, window uintptr) (Vulkan, error) {
 
 	var appInfo = &vk.ApplicationInfo{
 		SType:              vk.StructureTypeApplicationInfo,
@@ -80,6 +80,7 @@ func NewDevice(appName string, window uintptr, instanceExtensions []string) (Vul
 	}
 
 	// Phase 1: vk.CreateInstance with vk.InstanceCreateInfo
+
 	existingExtensions := getInstanceExtensions()
 	log.Println("[INFO] Instance extensions:", existingExtensions)
 
@@ -111,33 +112,31 @@ func NewDevice(appName string, window uintptr, instanceExtensions []string) (Vul
 		EnabledLayerCount:       uint32(len(instanceLayers)),
 		PpEnabledLayerNames:     instanceLayers,
 	}
-	var v Vulkan
-	err := vk.Error(vk.CreateInstance(&instanceCreateInfo, nil, &v.Instance))
+	var vo Vulkan
+	err := vk.Error(vk.CreateInstance(&instanceCreateInfo, nil, &vo.Instance))
 	if err != nil {
 		err = fmt.Errorf("vk.CreateInstance failed with %s", err)
-		return v, err
+		return vo, err
 	} else {
-		vk.InitInstance(v.Instance)
+		vk.InitInstance(vo.Instance) // used by MoltenVK
 	}
 
 	// Phase 2: vk.CreateAndroidSurface with vk.AndroidSurfaceCreateInfo
 
-	//v.Surface = vk.SurfaceFromPointer(createSurfaceFunc(v.Instance))
-	// err = vk.Error(vk.CreateWindowSurface(v.Instance, window, nil, &v.Surface))
-	v.Surface = NewSurface(v.Instance, window)
+	vo.Surface = createSurfaceFunc(vo.Instance, window)
 	if err != nil {
-		vk.DestroyInstance(v.Instance, nil)
+		vk.DestroyInstance(vo.Instance, nil)
 		err = fmt.Errorf("vkCreateWindowSurface failed with %s", err)
-		return v, err
+		return vo, err
 	}
-	if v.gpuDevices, err = getPhysicalDevices(v.Instance); err != nil {
-		v.gpuDevices = nil
-		vk.DestroySurface(v.Instance, v.Surface, nil)
-		vk.DestroyInstance(v.Instance, nil)
-		return v, err
+	if vo.gpuDevices, err = getPhysicalDevices(vo.Instance); err != nil {
+		vo.gpuDevices = nil
+		vk.DestroySurface(vo.Instance, vo.Surface, nil)
+		vk.DestroyInstance(vo.Instance, nil)
+		return vo, err
 	}
 
-	existingExtensions = getDeviceExtensions(v.gpuDevices[0])
+	existingExtensions = getDeviceExtensions(vo.gpuDevices[0])
 	log.Println("[INFO] Device extensions:", existingExtensions)
 
 	// Phase 3: vk.CreateDevice with vk.DeviceCreateInfo (a logical device)
@@ -174,18 +173,18 @@ func NewDevice(appName string, window uintptr, instanceExtensions []string) (Vul
 		PpEnabledLayerNames:     deviceLayers,
 	}
 	var device vk.Device // we choose the first GPU available for this device
-	err = vk.Error(vk.CreateDevice(v.gpuDevices[0], &deviceCreateInfo, nil, &device))
+	err = vk.Error(vk.CreateDevice(vo.gpuDevices[0], &deviceCreateInfo, nil, &device))
 	if err != nil {
-		v.gpuDevices = nil
-		vk.DestroySurface(v.Instance, v.Surface, nil)
-		vk.DestroyInstance(v.Instance, nil)
+		vo.gpuDevices = nil
+		vk.DestroySurface(vo.Instance, vo.Surface, nil)
+		vk.DestroyInstance(vo.Instance, nil)
 		err = fmt.Errorf("vk.CreateDevice failed with %s", err)
-		return v, err
+		return vo, err
 	} else {
-		v.Device = device
+		vo.Device = device
 		var queue vk.Queue
 		vk.GetDeviceQueue(device, 0, 0, &queue)
-		v.Queue = queue
+		vo.Queue = queue
 	}
 
 	if enableDebug {
@@ -197,15 +196,15 @@ func NewDevice(appName string, window uintptr, instanceExtensions []string) (Vul
 			//PfnCallback: dbgCallbackFunc,  //FIXME
 		}
 		var dbg vk.DebugReportCallback
-		err = vk.Error(vk.CreateDebugReportCallback(v.Instance, &dbgCreateInfo, nil, &dbg))
+		err = vk.Error(vk.CreateDebugReportCallback(vo.Instance, &dbgCreateInfo, nil, &dbg))
 		if err != nil {
 			err = fmt.Errorf("vk.CreateDebugReportCallback failed with %s", err)
 			log.Println("[WARN]", err)
-			return v, nil
+			return vo, nil
 		}
-		v.dbg = dbg
+		vo.dbg = dbg
 	}
-	return v, nil
+	return vo, nil
 }
 
 func (v *VulkanRenderInfo) DefaultFence() vk.Fence {

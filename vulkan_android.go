@@ -6,9 +6,9 @@ import (
 	vk "github.com/tomas-mraz/vulkan"
 )
 
-func NewSurface(instance vk.Instance, window uintptr) vk.Surface {
+func NewAndroidSurface(instance vk.Instance, windowPtr uintptr) vk.Surface {
 	surface := vk.Surface{}
-	result := vk.CreateWindowSurface(instance, window, nil, &surface)
+	result := vk.CreateWindowSurface(instance, windowPtr, nil, &surface)
 	if err := vk.Error(result); err != nil {
 		panic(err)
 	}
