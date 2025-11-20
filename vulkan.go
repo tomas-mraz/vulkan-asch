@@ -68,6 +68,145 @@ type VulkanRenderInfo struct {
 	fences     []vk.Fence
 }
 
+// NewDevice create the main Vulkan object holding references to all parts of the Vulkan API
+func NewDevice(appName string, instanceExtensions []string, createSurfaceFunc func(instance vk.Instance, window uintptr) vk.Surface, window uintptr) (Vulkan, error) {
+
+	var appInfo = &vk.ApplicationInfo{
+		SType:              vk.StructureTypeApplicationInfo,
+		ApiVersion:         vk.MakeVersion(1, 0, 0),
+		ApplicationVersion: vk.MakeVersion(1, 0, 0),
+		PApplicationName:   appName + "\x00",
+		PEngineName:        "no engine" + "\x00",
+	}
+
+	// Phase 1: vk.CreateInstance with vk.InstanceCreateInfo
+
+	existingExtensions := getInstanceExtensions()
+	log.Println("[INFO] Instance extensions:", existingExtensions)
+
+	// instanceExtensions := vk.GetRequiredInstanceExtensions()
+	if enableDebug {
+		instanceExtensions = append(instanceExtensions,
+			"VK_EXT_debug_report\x00")
+	}
+
+	// ANDROID:
+	// these layers must be included in APK,
+	// see Android.mk and ValidationLayers.mk
+	instanceLayers := []string{
+		// "VK_LAYER_GOOGLE_threading\x00",
+		// "VK_LAYER_LUNARG_parameter_validation\x00",
+		// "VK_LAYER_LUNARG_object_tracker\x00",
+		// "VK_LAYER_LUNARG_core_validation\x00",
+		// "VK_LAYER_LUNARG_api_dump\x00",
+		// "VK_LAYER_LUNARG_image\x00",
+		// "VK_LAYER_LUNARG_swapchain\x00",
+		// "VK_LAYER_GOOGLE_unique_objects\x00",
+	}
+
+	instanceCreateInfo := vk.InstanceCreateInfo{
+		SType:                   vk.StructureTypeInstanceCreateInfo,
+		PApplicationInfo:        appInfo,
+		EnabledExtensionCount:   uint32(len(instanceExtensions)),
+		PpEnabledExtensionNames: instanceExtensions,
+		EnabledLayerCount:       uint32(len(instanceLayers)),
+		PpEnabledLayerNames:     instanceLayers,
+	}
+	var vo Vulkan
+	err := vk.Error(vk.CreateInstance(&instanceCreateInfo, nil, &vo.Instance))
+	if err != nil {
+		err = fmt.Errorf("vk.CreateInstance failed with %s", err)
+		return vo, err
+	} else {
+		vk.InitInstance(vo.Instance) // used by MoltenVK
+	}
+
+	// Phase 2: vk.CreateAndroidSurface with vk.AndroidSurfaceCreateInfo
+
+	vo.Surface = createSurfaceFunc(vo.Instance, window)
+	if err != nil {
+		vk.DestroyInstance(vo.Instance, nil)
+		err = fmt.Errorf("vkCreateWindowSurface failed with %s", err)
+		return vo, err
+	}
+	if vo.gpuDevices, err = getPhysicalDevices(vo.Instance); err != nil {
+		vo.gpuDevices = nil
+		vk.DestroySurface(vo.Instance, vo.Surface, nil)
+		vk.DestroyInstance(vo.Instance, nil)
+		return vo, err
+	}
+
+	existingExtensions = getDeviceExtensions(vo.gpuDevices[0])
+	log.Println("[INFO] Device extensions:", existingExtensions)
+
+	// Phase 3: vk.CreateDevice with vk.DeviceCreateInfo (a logical device)
+
+	// ANDROID:
+	// these layers must be included in APK,
+	// see Android.mk and ValidationLayers.mk
+	deviceLayers := []string{
+		// "VK_LAYER_GOOGLE_threading\x00",
+		// "VK_LAYER_LUNARG_parameter_validation\x00",
+		// "VK_LAYER_LUNARG_object_tracker\x00",
+		// "VK_LAYER_LUNARG_core_validation\x00",
+		// "VK_LAYER_LUNARG_api_dump\x00",
+		// "VK_LAYER_LUNARG_image\x00",
+		// "VK_LAYER_LUNARG_swapchain\x00",
+		// "VK_LAYER_GOOGLE_unique_objects\x00",
+	}
+
+	queueCreateInfos := []vk.DeviceQueueCreateInfo{{
+		SType:            vk.StructureTypeDeviceQueueCreateInfo,
+		QueueCount:       1,
+		PQueuePriorities: []float32{1.0},
+	}}
+	deviceExtensions := []string{
+		"VK_KHR_swapchain\x00",
+	}
+	deviceCreateInfo := vk.DeviceCreateInfo{
+		SType:                   vk.StructureTypeDeviceCreateInfo,
+		QueueCreateInfoCount:    uint32(len(queueCreateInfos)),
+		PQueueCreateInfos:       queueCreateInfos,
+		EnabledExtensionCount:   uint32(len(deviceExtensions)),
+		PpEnabledExtensionNames: deviceExtensions,
+		EnabledLayerCount:       uint32(len(deviceLayers)),
+		PpEnabledLayerNames:     deviceLayers,
+	}
+	var device vk.Device // we choose the first GPU available for this device
+	err = vk.Error(vk.CreateDevice(vo.gpuDevices[0], &deviceCreateInfo, nil, &device))
+	if err != nil {
+		vo.gpuDevices = nil
+		vk.DestroySurface(vo.Instance, vo.Surface, nil)
+		vk.DestroyInstance(vo.Instance, nil)
+		err = fmt.Errorf("vk.CreateDevice failed with %s", err)
+		return vo, err
+	} else {
+		vo.Device = device
+		var queue vk.Queue
+		vk.GetDeviceQueue(device, 0, 0, &queue)
+		vo.Queue = queue
+	}
+
+	if enableDebug {
+		// Phase 4: vk.CreateDebugReportCallback
+
+		dbgCreateInfo := vk.DebugReportCallbackCreateInfo{
+			SType: vk.StructureTypeDebugReportCallbackCreateInfo,
+			Flags: vk.DebugReportFlags(vk.DebugReportErrorBit | vk.DebugReportWarningBit),
+			//PfnCallback: dbgCallbackFunc,  //FIXME
+		}
+		var dbg vk.DebugReportCallback
+		err = vk.Error(vk.CreateDebugReportCallback(vo.Instance, &dbgCreateInfo, nil, &dbg))
+		if err != nil {
+			err = fmt.Errorf("vk.CreateDebugReportCallback failed with %s", err)
+			log.Println("[WARN]", err)
+			return vo, nil
+		}
+		vo.dbg = dbg
+	}
+	return vo, nil
+}
+
 func (v *VulkanRenderInfo) DefaultFence() vk.Fence {
 	return v.fences[0]
 }
@@ -247,136 +386,6 @@ func CreateRenderer(device vk.Device, displayFormat vk.Format) (VulkanRenderInfo
 	}
 	r.device = device
 	return r, nil
-}
-
-func NewVulkanDevice(appInfo *vk.ApplicationInfo, window uintptr, instanceExtensions []string, createSurfaceFunc func(interface{}) uintptr) (Vulkan, error) {
-	// Phase 1: vk.CreateInstance with vk.InstanceCreateInfo
-
-	existingExtensions := getInstanceExtensions()
-	log.Println("[INFO] Instance extensions:", existingExtensions)
-
-	// instanceExtensions := vk.GetRequiredInstanceExtensions()
-	if enableDebug {
-		instanceExtensions = append(instanceExtensions,
-			"VK_EXT_debug_report\x00")
-	}
-
-	// ANDROID:
-	// these layers must be included in APK,
-	// see Android.mk and ValidationLayers.mk
-	instanceLayers := []string{
-		// "VK_LAYER_GOOGLE_threading\x00",
-		// "VK_LAYER_LUNARG_parameter_validation\x00",
-		// "VK_LAYER_LUNARG_object_tracker\x00",
-		// "VK_LAYER_LUNARG_core_validation\x00",
-		// "VK_LAYER_LUNARG_api_dump\x00",
-		// "VK_LAYER_LUNARG_image\x00",
-		// "VK_LAYER_LUNARG_swapchain\x00",
-		// "VK_LAYER_GOOGLE_unique_objects\x00",
-	}
-
-	instanceCreateInfo := vk.InstanceCreateInfo{
-		SType:                   vk.StructureTypeInstanceCreateInfo,
-		PApplicationInfo:        appInfo,
-		EnabledExtensionCount:   uint32(len(instanceExtensions)),
-		PpEnabledExtensionNames: instanceExtensions,
-		EnabledLayerCount:       uint32(len(instanceLayers)),
-		PpEnabledLayerNames:     instanceLayers,
-	}
-	var v Vulkan
-	err := vk.Error(vk.CreateInstance(&instanceCreateInfo, nil, &v.Instance))
-	if err != nil {
-		err = fmt.Errorf("vk.CreateInstance failed with %s", err)
-		return v, err
-	} else {
-		vk.InitInstance(v.Instance)
-	}
-
-	// Phase 2: vk.CreateAndroidSurface with vk.AndroidSurfaceCreateInfo
-
-	v.Surface = vk.SurfaceFromPointer(createSurfaceFunc(v.Instance))
-	// err = vk.Error(vk.CreateWindowSurface(v.Instance, window, nil, &v.Surface))
-	if err != nil {
-		vk.DestroyInstance(v.Instance, nil)
-		err = fmt.Errorf("vkCreateWindowSurface failed with %s", err)
-		return v, err
-	}
-	if v.gpuDevices, err = getPhysicalDevices(v.Instance); err != nil {
-		v.gpuDevices = nil
-		vk.DestroySurface(v.Instance, v.Surface, nil)
-		vk.DestroyInstance(v.Instance, nil)
-		return v, err
-	}
-
-	existingExtensions = getDeviceExtensions(v.gpuDevices[0])
-	log.Println("[INFO] Device extensions:", existingExtensions)
-
-	// Phase 3: vk.CreateDevice with vk.DeviceCreateInfo (a logical device)
-
-	// ANDROID:
-	// these layers must be included in APK,
-	// see Android.mk and ValidationLayers.mk
-	deviceLayers := []string{
-		// "VK_LAYER_GOOGLE_threading\x00",
-		// "VK_LAYER_LUNARG_parameter_validation\x00",
-		// "VK_LAYER_LUNARG_object_tracker\x00",
-		// "VK_LAYER_LUNARG_core_validation\x00",
-		// "VK_LAYER_LUNARG_api_dump\x00",
-		// "VK_LAYER_LUNARG_image\x00",
-		// "VK_LAYER_LUNARG_swapchain\x00",
-		// "VK_LAYER_GOOGLE_unique_objects\x00",
-	}
-
-	queueCreateInfos := []vk.DeviceQueueCreateInfo{{
-		SType:            vk.StructureTypeDeviceQueueCreateInfo,
-		QueueCount:       1,
-		PQueuePriorities: []float32{1.0},
-	}}
-	deviceExtensions := []string{
-		"VK_KHR_swapchain\x00",
-	}
-	deviceCreateInfo := vk.DeviceCreateInfo{
-		SType:                   vk.StructureTypeDeviceCreateInfo,
-		QueueCreateInfoCount:    uint32(len(queueCreateInfos)),
-		PQueueCreateInfos:       queueCreateInfos,
-		EnabledExtensionCount:   uint32(len(deviceExtensions)),
-		PpEnabledExtensionNames: deviceExtensions,
-		EnabledLayerCount:       uint32(len(deviceLayers)),
-		PpEnabledLayerNames:     deviceLayers,
-	}
-	var device vk.Device // we choose the first GPU available for this device
-	err = vk.Error(vk.CreateDevice(v.gpuDevices[0], &deviceCreateInfo, nil, &device))
-	if err != nil {
-		v.gpuDevices = nil
-		vk.DestroySurface(v.Instance, v.Surface, nil)
-		vk.DestroyInstance(v.Instance, nil)
-		err = fmt.Errorf("vk.CreateDevice failed with %s", err)
-		return v, err
-	} else {
-		v.Device = device
-		var queue vk.Queue
-		vk.GetDeviceQueue(device, 0, 0, &queue)
-		v.Queue = queue
-	}
-
-	if enableDebug {
-		// Phase 4: vk.CreateDebugReportCallback
-
-		dbgCreateInfo := vk.DebugReportCallbackCreateInfo{
-			SType: vk.StructureTypeDebugReportCallbackCreateInfo,
-			Flags: vk.DebugReportFlags(vk.DebugReportErrorBit | vk.DebugReportWarningBit),
-			//PfnCallback: dbgCallbackFunc,  //FIXME
-		}
-		var dbg vk.DebugReportCallback
-		err = vk.Error(vk.CreateDebugReportCallback(v.Instance, &dbgCreateInfo, nil, &dbg))
-		if err != nil {
-			err = fmt.Errorf("vk.CreateDebugReportCallback failed with %s", err)
-			log.Println("[WARN]", err)
-			return v, nil
-		}
-		v.dbg = dbg
-	}
-	return v, nil
 }
 
 func getInstanceExtensions() (extNames []string) {
