@@ -8,7 +8,7 @@ import (
 	vk "github.com/tomas-mraz/vulkan"
 )
 
-var enableDebug = false
+var debug = false
 
 type Vulkan struct {
 	GpuDevice vk.PhysicalDevice
@@ -20,11 +20,14 @@ type Vulkan struct {
 }
 
 type VulkanGfxPipelineInfo struct {
-	device vk.Device
-
+	device   vk.Device
 	layout   vk.PipelineLayout
 	cache    vk.PipelineCache
 	pipeline vk.Pipeline
+}
+
+func SetDebug(state bool) {
+	debug = state
 }
 
 // NewDevice create the main Vulkan object holding references to all parts of the Vulkan API
@@ -44,7 +47,7 @@ func NewDevice(appName string, instanceExtensions []string, createSurfaceFunc fu
 	log.Println("[INFO] Instance extensions:", existingExtensions)
 
 	// instanceExtensions := vk.GetRequiredInstanceExtensions()
-	if enableDebug {
+	if debug {
 		instanceExtensions = append(instanceExtensions,
 			"VK_EXT_debug_report\x00")
 	}
@@ -147,7 +150,7 @@ func NewDevice(appName string, instanceExtensions []string, createSurfaceFunc fu
 		vo.Queue = queue
 	}
 
-	if enableDebug {
+	if debug {
 		// Phase 4: vk.CreateDebugReportCallback
 
 		dbgCreateInfo := vk.DebugReportCallbackCreateInfo{
