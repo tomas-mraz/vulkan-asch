@@ -6,7 +6,6 @@ import (
 	"unsafe"
 
 	vk "github.com/tomas-mraz/vulkan"
-	"github.com/xlab/linmath"
 )
 
 var enableDebug = false
@@ -18,15 +17,6 @@ type Vulkan struct {
 	Queue     vk.Queue
 	Device    vk.Device
 	dbg       vk.DebugReportCallbackFunc
-}
-
-type VulkanBufferInfo struct {
-	device        vk.Device
-	vertexBuffers []vk.Buffer
-}
-
-func (v *VulkanBufferInfo) DefaultVertexBuffer() vk.Buffer {
-	return v.vertexBuffers[0]
 }
 
 type VulkanGfxPipelineInfo struct {
@@ -351,89 +341,6 @@ func getPhysicalDevices(instance vk.Instance) ([]vk.PhysicalDevice, error) {
 	}
 	return gpuList, nil
 }
-
-func (v Vulkan) CreateBuffers() (VulkanBufferInfo, error) {
-	gpu := v.GpuDevice
-
-	// Phase 1: vk.CreateBuffer
-	//			create the triangle vertex buffer
-
-	vertexData := linmath.ArrayFloat32([]float32{
-		-1, -1, 0,
-		1, -1, 0,
-		0, 1, 0,
-	})
-	queueFamilyIdx := []uint32{0}
-	bufferCreateInfo := vk.BufferCreateInfo{
-		SType:                 vk.StructureTypeBufferCreateInfo,
-		Size:                  vk.DeviceSize(vertexData.Sizeof()),
-		Usage:                 vk.BufferUsageFlags(vk.BufferUsageVertexBufferBit),
-		SharingMode:           vk.SharingModeExclusive,
-		QueueFamilyIndexCount: 1,
-		PQueueFamilyIndices:   queueFamilyIdx,
-	}
-	buffer := VulkanBufferInfo{
-		vertexBuffers: make([]vk.Buffer, 1),
-	}
-	err := vk.Error(vk.CreateBuffer(v.Device, &bufferCreateInfo, nil, &buffer.vertexBuffers[0]))
-	if err != nil {
-		err = fmt.Errorf("vk.CreateBuffer failed with %s", err)
-		return buffer, err
-	}
-
-	// Phase 2: vk.GetBufferMemoryRequirements
-	//			vk.FindMemoryTypeIndex
-	// 			assign a proper memory type for that buffer
-
-	var memReq vk.MemoryRequirements
-	vk.GetBufferMemoryRequirements(v.Device, buffer.DefaultVertexBuffer(), &memReq)
-	memReq.Deref()
-	allocInfo := vk.MemoryAllocateInfo{
-		SType:           vk.StructureTypeMemoryAllocateInfo,
-		AllocationSize:  memReq.Size,
-		MemoryTypeIndex: 0, // see below
-	}
-	allocInfo.MemoryTypeIndex, _ = vk.FindMemoryTypeIndex(gpu, memReq.MemoryTypeBits,
-		vk.MemoryPropertyHostVisibleBit)
-
-	// Phase 3: vk.AllocateMemory
-	//			vk.MapMemory
-	//			vk.MemCopyFloat32
-	//			vk.UnmapMemory
-	// 			allocate and map memory for that buffer
-
-	var deviceMemory vk.DeviceMemory
-	err = vk.Error(vk.AllocateMemory(v.Device, &allocInfo, nil, &deviceMemory))
-	if err != nil {
-		err = fmt.Errorf("vk.AllocateMemory failed with %s", err)
-		return buffer, err
-	}
-	var data unsafe.Pointer
-	vk.MapMemory(v.Device, deviceMemory, 0, vk.DeviceSize(vertexData.Sizeof()), 0, &data)
-	n := vk.Memcopy(data, vertexData.Data())
-	if n != vertexData.Sizeof() {
-		log.Println("[WARN] failed to copy vertex buffer data")
-	}
-	vk.UnmapMemory(v.Device, deviceMemory)
-
-	// Phase 4: vk.BindBufferMemory
-	//			copy vertex data and bind buffer
-
-	err = vk.Error(vk.BindBufferMemory(v.Device, buffer.DefaultVertexBuffer(), deviceMemory, 0))
-	if err != nil {
-		err = fmt.Errorf("vk.BindBufferMemory failed with %s", err)
-		return buffer, err
-	}
-	buffer.device = v.Device
-	return buffer, err
-}
-
-func (buf *VulkanBufferInfo) Destroy() {
-	for i := range buf.vertexBuffers {
-		vk.DestroyBuffer(buf.device, buf.vertexBuffers[i], nil)
-	}
-}
-
 func CreateGraphicsPipeline(device vk.Device, displaySize vk.Extent2D, renderPass vk.RenderPass) (VulkanGfxPipelineInfo, error) {
 	var gfxPipeline VulkanGfxPipelineInfo
 
