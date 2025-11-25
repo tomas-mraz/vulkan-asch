@@ -167,7 +167,7 @@ func NewDevice(appName string, instanceExtensions []string, createSurfaceFunc fu
 	return vo, nil
 }
 
-func VulkanInit(v *Vulkan, s *VulkanSwapchainInfo, r *VulkanRenderInfo, b *VulkanBufferInfo, gfx *VulkanGfxPipelineInfo) {
+func VulkanInit(device vk.Device, swapchain *VulkanSwapchainInfo, r *VulkanRenderInfo, b *VulkanBufferInfo, gfx *VulkanGfxPipelineInfo) {
 
 	clearValues := []vk.ClearValue{
 		vk.NewClearValue([]float32{0.098, 0.71, 0.996, 1}),
@@ -179,12 +179,12 @@ func VulkanInit(v *Vulkan, s *VulkanSwapchainInfo, r *VulkanRenderInfo, b *Vulka
 		renderPassBeginInfo := vk.RenderPassBeginInfo{
 			SType:       vk.StructureTypeRenderPassBeginInfo,
 			RenderPass:  r.RenderPass,
-			Framebuffer: s.Framebuffers[i],
+			Framebuffer: swapchain.Framebuffers[i],
 			RenderArea: vk.Rect2D{
 				Offset: vk.Offset2D{
 					X: 0, Y: 0,
 				},
-				Extent: s.DisplaySize,
+				Extent: swapchain.DisplaySize,
 			},
 			ClearValueCount: 1,
 			PClearValues:    clearValues,
@@ -209,10 +209,10 @@ func VulkanInit(v *Vulkan, s *VulkanSwapchainInfo, r *VulkanRenderInfo, b *Vulka
 		SType: vk.StructureTypeSemaphoreCreateInfo,
 	}
 	r.fences = make([]vk.Fence, 1)
-	ret := vk.CreateFence(v.Device, &fenceCreateInfo, nil, &r.fences[0])
+	ret := vk.CreateFence(device, &fenceCreateInfo, nil, &r.fences[0])
 	check(ret, "vk.CreateFence")
 	r.semaphores = make([]vk.Semaphore, 1)
-	ret = vk.CreateSemaphore(v.Device, &semaphoreCreateInfo, nil, &r.semaphores[0])
+	ret = vk.CreateSemaphore(device, &semaphoreCreateInfo, nil, &r.semaphores[0])
 	check(ret, "vk.CreateSemaphore")
 }
 
@@ -341,6 +341,7 @@ func getPhysicalDevices(instance vk.Instance) ([]vk.PhysicalDevice, error) {
 	}
 	return gpuList, nil
 }
+
 func NewGraphicsPipeline(device vk.Device, displaySize vk.Extent2D, renderPass vk.RenderPass) (VulkanGfxPipelineInfo, error) {
 	var gfxPipeline VulkanGfxPipelineInfo
 
