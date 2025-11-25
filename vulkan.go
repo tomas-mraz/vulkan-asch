@@ -219,7 +219,7 @@ func VulkanInit(device vk.Device, swapchain *VulkanSwapchainInfo, r *VulkanRende
 	check(ret, "vk.CreateSemaphore")
 }
 
-func VulkanDrawFrame(v Vulkan, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
+func DrawFrame(device vk.Device, queue vk.Queue, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
 	var nextIdx uint32
 
 	// Phase 1: vk.AcquireNextImage
@@ -228,7 +228,7 @@ func VulkanDrawFrame(v Vulkan, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
 	//			N.B. non-infinite timeouts may be not yet implemented
 	//			by your Vulkan driver
 
-	err := vk.Error(vk.AcquireNextImage(v.Device, s.DefaultSwapchain(),
+	err := vk.Error(vk.AcquireNextImage(device, s.DefaultSwapchain(),
 		vk.MaxUint64, r.DefaultSemaphore(), vk.NullFence, &nextIdx))
 	if err != nil {
 		err = fmt.Errorf("vk.AcquireNextImage failed with %s", err)
@@ -239,7 +239,7 @@ func VulkanDrawFrame(v Vulkan, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
 	// Phase 2: vk.QueueSubmit
 	//			vk.WaitForFences
 
-	vk.ResetFences(v.Device, 1, r.fences)
+	vk.ResetFences(device, 1, r.fences)
 	submitInfo := []vk.SubmitInfo{{
 		SType:              vk.StructureTypeSubmitInfo,
 		WaitSemaphoreCount: 1,
@@ -247,7 +247,7 @@ func VulkanDrawFrame(v Vulkan, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
 		CommandBufferCount: 1,
 		PCommandBuffers:    r.cmdBuffers[nextIdx:],
 	}}
-	err = vk.Error(vk.QueueSubmit(v.Queue, 1, submitInfo, r.DefaultFence()))
+	err = vk.Error(vk.QueueSubmit(queue, 1, submitInfo, r.DefaultFence()))
 	if err != nil {
 		err = fmt.Errorf("vk.QueueSubmit failed with %s", err)
 		log.Println("[WARN]", err)
@@ -255,7 +255,7 @@ func VulkanDrawFrame(v Vulkan, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
 	}
 
 	const timeoutNano = 10 * 1000 * 1000 * 1000 // 10 sec
-	err = vk.Error(vk.WaitForFences(v.Device, 1, r.fences, vk.True, timeoutNano))
+	err = vk.Error(vk.WaitForFences(device, 1, r.fences, vk.True, timeoutNano))
 	if err != nil {
 		err = fmt.Errorf("vk.WaitForFences failed with %s", err)
 		log.Println("[WARN]", err)
@@ -271,7 +271,7 @@ func VulkanDrawFrame(v Vulkan, s VulkanSwapchainInfo, r VulkanRenderInfo) bool {
 		PSwapchains:    s.Swapchains,
 		PImageIndices:  imageIndices,
 	}
-	err = vk.Error(vk.QueuePresent(v.Queue, &presentInfo))
+	err = vk.Error(vk.QueuePresent(queue, &presentInfo))
 	if err != nil {
 		err = fmt.Errorf("vk.QueuePresent failed with %s", err)
 		log.Println("[WARN]", err)
