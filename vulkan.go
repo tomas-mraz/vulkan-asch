@@ -77,6 +77,12 @@ func getPhysicalDevices(instance vk.Instance) ([]vk.PhysicalDevice, error) {
 		err = fmt.Errorf("vk.EnumeratePhysicalDevices failed with %s", err)
 		return nil, err
 	}
+
+	var aaa vk.PhysicalDeviceProperties
+	vk.GetPhysicalDeviceProperties(gpuList[0], &aaa)
+	aaa.Deref()
+	fmt.Println("Used GPU:", aaa.DeviceName)
+
 	return gpuList, nil
 }
 
