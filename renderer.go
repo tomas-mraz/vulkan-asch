@@ -23,8 +23,8 @@ func NewRenderer(device vk.Device, displayFormat vk.Format) (VulkanRenderInfo, e
 		StoreOp:        vk.AttachmentStoreOpStore,
 		StencilLoadOp:  vk.AttachmentLoadOpDontCare,
 		StencilStoreOp: vk.AttachmentStoreOpDontCare,
-		InitialLayout:  vk.ImageLayoutColorAttachmentOptimal,
-		FinalLayout:    vk.ImageLayoutColorAttachmentOptimal,
+		InitialLayout:  vk.ImageLayoutUndefined,
+		FinalLayout:    vk.ImageLayoutPresentSrc,
 	}}
 	colorAttachments := []vk.AttachmentReference{{
 		Attachment: 0,

@@ -12,6 +12,7 @@ import (
 type VulkanBufferInfo struct {
 	device        vk.Device
 	vertexBuffers []vk.Buffer
+	deviceMemory  vk.DeviceMemory
 }
 
 func NewBuffer(device vk.Device, gpu vk.PhysicalDevice) (VulkanBufferInfo, error) {
@@ -76,6 +77,7 @@ func NewBuffer(device vk.Device, gpu vk.PhysicalDevice) (VulkanBufferInfo, error
 		log.Println("[WARN] failed to copy vertex buffer data")
 	}
 	vk.UnmapMemory(device, deviceMemory)
+	buffer.deviceMemory = deviceMemory
 
 	// Phase 4: vk.BindBufferMemory
 	//			copy vertex data and bind buffer
@@ -97,4 +99,8 @@ func (buf *VulkanBufferInfo) Destroy() {
 
 func (buf *VulkanBufferInfo) DefaultVertexBuffer() vk.Buffer {
 	return buf.vertexBuffers[0]
+}
+
+func (buf *VulkanBufferInfo) getDeviceMemory() vk.DeviceMemory {
+	return buf.deviceMemory
 }

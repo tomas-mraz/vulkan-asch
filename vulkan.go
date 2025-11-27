@@ -225,7 +225,7 @@ func NewDevice(appName string, instanceExtensions []string, createSurfaceFunc fu
 	return vo, nil
 }
 
-func VulkanInit(device vk.Device, swapchain *VulkanSwapchainInfo, r *VulkanRenderInfo, b *VulkanBufferInfo, gfx *VulkanGfxPipelineInfo) {
+func VulkanStart(device vk.Device, swapchain *VulkanSwapchainInfo, r *VulkanRenderInfo, b *VulkanBufferInfo, gfx *VulkanGfxPipelineInfo) {
 
 	clearValues := []vk.ClearValue{
 		vk.NewClearValue([]float32{0.098, 0.71, 0.996, 1}),
@@ -293,14 +293,18 @@ func DrawFrame(device vk.Device, queue vk.Queue, s VulkanSwapchainInfo, r Vulkan
 
 	// Phase 2: vk.QueueSubmit
 	//			vk.WaitForFences
+	waitStages := []vk.PipelineStageFlags{vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit)}
 
 	vk.ResetFences(device, 1, r.fences)
 	submitInfo := []vk.SubmitInfo{{
 		SType:              vk.StructureTypeSubmitInfo,
 		WaitSemaphoreCount: 1,
 		PWaitSemaphores:    r.semaphores,
+		PWaitDstStageMask:  waitStages,
 		CommandBufferCount: 1,
 		PCommandBuffers:    r.cmdBuffers[nextIdx:],
+		//SignalSemaphoreCount: 1,
+		//PSignalSemaphores:    r.DefaultSemaphore(),
 	}}
 	err = vk.Error(vk.QueueSubmit(queue, 1, submitInfo, r.DefaultFence()))
 	if err != nil {
@@ -335,20 +339,25 @@ func DrawFrame(device vk.Device, queue vk.Queue, s VulkanSwapchainInfo, r Vulkan
 	return true
 }
 
-func DestroyInOrder(v *Vulkan, s *VulkanSwapchainInfo, r *VulkanRenderInfo, b *VulkanBufferInfo, gfx *VulkanGfxPipelineInfo) {
+func DestroyInOrder(v *Vulkan, swapchain *VulkanSwapchainInfo, r *VulkanRenderInfo, buffer *VulkanBufferInfo, gfx *VulkanGfxPipelineInfo) {
 
 	vk.FreeCommandBuffers(v.Device, r.cmdPool, uint32(len(r.cmdBuffers)), r.cmdBuffers)
 	r.cmdBuffers = nil
 
 	vk.DestroyCommandPool(v.Device, r.cmdPool, nil)
 	vk.DestroyRenderPass(v.Device, r.RenderPass, nil)
+	vk.DestroySemaphore(v.Device, r.DefaultSemaphore(), nil)
+	vk.DestroyFence(v.Device, r.DefaultFence(), nil)
+	vk.FreeMemory(v.Device, buffer.getDeviceMemory(), nil)
 
-	s.Destroy()
+	swapchain.Destroy()
 	gfx.Destroy()
-	b.Destroy()
+	buffer.Destroy()
+
 	vk.DestroyDevice(v.Device, nil)
 	if v.dbg != vk.NullDebugReportCallback {
 		vk.DestroyDebugReportCallback(v.Instance, v.dbg, nil)
 	}
+	vk.DestroySurface(v.Instance, v.Surface, nil)
 	vk.DestroyInstance(v.Instance, nil)
 }

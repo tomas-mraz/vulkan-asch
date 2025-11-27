@@ -128,7 +128,7 @@ func NewGraphicsPipeline(device vk.Device, displaySize vk.Extent2D, renderPass v
 	inputAssemblyState := vk.PipelineInputAssemblyStateCreateInfo{
 		SType:                  vk.StructureTypePipelineInputAssemblyStateCreateInfo,
 		Topology:               vk.PrimitiveTopologyTriangleList,
-		PrimitiveRestartEnable: vk.True,
+		PrimitiveRestartEnable: vk.False,
 	}
 	vertexInputBindings := []vk.VertexInputBindingDescription{{
 		Binding:   0,
