@@ -61,10 +61,14 @@ func NewSwapchain(device vk.Device, gpu vk.PhysicalDevice, surface vk.Surface, w
 	swap.DisplayFormat = formats[chosenFormat].Format
 
 	surfaceCapabilities.CurrentExtent.Deref()
-	if surfaceCapabilities.CurrentExtent.Width == vk.MaxUint32 {
+	if surfaceCapabilities.CurrentExtent.Width == vk.MaxUint32 && surfaceCapabilities.CurrentExtent.Height == vk.MaxUint32 {
 		// Wayland specific https://docs.vulkan.org/spec/latest/chapters/VK_KHR_surface/wsi.html#vkCreateAndroidSurfaceKHR
 		swap.DisplaySize = windowSize
 		slog.Debug("[wayland specific] surface extent size is not set, using window size")
+	} else if surfaceCapabilities.CurrentExtent.Width == 0 && surfaceCapabilities.CurrentExtent.Height == 0 {
+		// Android specific not yet ready surface
+		swap.DisplaySize = windowSize
+		slog.Debug("[android specific] surface extent size is 0x0, using window size")
 	} else {
 		swap.DisplaySize = surfaceCapabilities.CurrentExtent
 	}
