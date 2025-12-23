@@ -66,7 +66,7 @@ func (sf *Surface) Defaults() {
 // AcquireNextImage gets the next frame index to render to.
 // It automatically handles any issues with out-of-date swapchain.
 // It triggers the SemaphoreImageAcquired semaphore when image actually acquired.
-// Must call SubmitRender with command to launch command contingent
+// Must call SubmitRenderCommand with command to launch command contingent
 // on that semaphore. It returns false if the swapchain size is zero.
 func (sf *Surface) AcquireNextImage() (uint32, bool) {
 	dev := sf.Device.Device
@@ -113,12 +113,12 @@ func (sf *Surface) AcquireNextImage() (uint32, bool) {
 	}
 }
 
-// SubmitRender submits a rendering command that must have been added
+// SubmitRenderCommand submits a rendering command that must have been added
 // to the given command buffer, calling CmdEnd on the buffer first.
 // This buffer triggers the associated Fence logic to control the
 // sequencing of render commands over time.
 // The SemaphoreImageAcquired semaphore before the command is run.
-func (sf *Surface) SubmitRender(cmd vk.CommandBuffer) {
+func (sf *Surface) SubmitRenderCommand(cmd vk.CommandBuffer) {
 	ret := vk.EndCommandBuffer(cmd)
 	IfPanic(NewError(ret))
 
