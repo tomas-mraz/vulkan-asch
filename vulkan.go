@@ -287,8 +287,7 @@ func DrawFrame(device vk.Device, queue vk.Queue, s VulkanSwapchainInfo, r Vulkan
 	//			N.B. non-infinite timeouts may be not yet implemented
 	//			by your Vulkan driver
 
-	err := vk.Error(vk.AcquireNextImage(device, s.DefaultSwapchain(),
-		vk.MaxUint64, r.DefaultSemaphore(), vk.NullFence, &nextIdx))
+	err := vk.Error(vk.AcquireNextImage(device, s.DefaultSwapchain(), vk.MaxUint64, r.DefaultSemaphore(), vk.NullFence, &nextIdx))
 	if err != nil {
 		err = fmt.Errorf("vk.AcquireNextImage failed with %s", err)
 		slog.Warn(err.Error())
