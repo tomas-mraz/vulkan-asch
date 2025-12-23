@@ -25,9 +25,6 @@ type Surface struct {
 	// the number of frames to maintain in the swapchain -- e.g., 2 = double-buffering, 3 = triple-buffering -- initially set to a requested amount, and after Init reflects the actual number
 	//NFrames int
 
-	// Framebuffers representing the visible Image owned by the Surface -- we iterate through these in rendering subsequent frames
-	//Frames []*vk.Framebuffer
-
 	Device                 vk.Device    // device for this surface -- each window surface has its own device, configured for that surface
 	Surface                vk.Surface   // vulkan handle for surface
 	Swapchain              vk.Swapchain // vulkan handle for swapchain
@@ -37,6 +34,8 @@ type Surface struct {
 	SemaphoreImageAcquired vk.Semaphore // semaphore used internally for waiting on acquisition of the next frame
 	// semaphore that surface user can wait on, will be activated when the image has been acquired in AcquireNextFrame method
 	SemaphoreRenderDone vk.Semaphore
+	// Framebuffers representing the visible Image owned by the Surface -- we iterate through these in rendering subsequent frames
+	Frames []*vk.Framebuffer
 
 	// NeedsConfig is whether the surface needs to be configured again without freeing the swapchain.
 	// This is set internally to allow for correct recovery from sudden minimization events that are
@@ -120,34 +119,39 @@ func (sf *Surface) AcquireNextImage() (uint32, bool) {
 // sequencing of render commands over time.
 // The SemaphoreImageAcquired semaphore before the command is run.
 func (sf *Surface) SubmitRender(cmd vk.CommandBuffer) {
-	CmdEnd(cmd)
-	ret := vk.QueueSubmit(sf.Device.Queue, 1, []vk.SubmitInfo{{
-		SType: vk.StructureTypeSubmitInfo,
-		PWaitDstStageMask: []vk.PipelineStageFlags{
-			vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
-		},
+	ret := vk.EndCommandBuffer(cmd)
+	IfPanic(NewError(ret))
+
+	submitInfo := []vk.SubmitInfo{{
+		SType:                vk.StructureTypeSubmitInfo,
+		PWaitDstStageMask:    []vk.PipelineStageFlags{vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit)},
 		WaitSemaphoreCount:   1,
 		PWaitSemaphores:      []vk.Semaphore{sf.SemaphoreImageAcquired},
 		CommandBufferCount:   1,
 		PCommandBuffers:      []vk.CommandBuffer{cmd},
 		SignalSemaphoreCount: 1,
 		PSignalSemaphores:    []vk.Semaphore{sf.SemaphoreRenderDone},
-	}}, sf.RenderFence)
-	IfPanic(NewError(ret))
+	}}
+
+	ret2 := vk.QueueSubmit(sf.Device.Queue, 1, submitInfo, sf.RenderFence)
+	IfPanic(NewError(ret2))
 }
 
 // PresentImage waits on the SemaphoreRenderDone semaphore to present the
 // rendered image to the surface, for the given frame index,
 // as returned by AcquireNextImage.
 func (sf *Surface) PresentImage(frameIndex uint32) error {
-	ret := vk.QueuePresent(sf.Device.Queue, &vk.PresentInfo{
+
+	presentInfo := &vk.PresentInfo{
 		SType:              vk.StructureTypePresentInfo,
 		WaitSemaphoreCount: 1,
 		PWaitSemaphores:    []vk.Semaphore{sf.SemaphoreRenderDone},
 		SwapchainCount:     1,
 		PSwapchains:        []vk.Swapchain{sf.Swapchain},
 		PImageIndices:      []uint32{frameIndex},
-	})
+	}
+
+	ret := vk.QueuePresent(sf.Device.Queue, presentInfo)
 
 	switch ret {
 	case vk.ErrorOutOfDate, vk.Suboptimal:

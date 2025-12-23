@@ -53,3 +53,24 @@ func (im *ImageFormat) Set(w, h int, ft vk.Format) {
 	im.SetSize(w, h)
 	im.Format = ft
 }
+
+// SetMultisample sets the number of multisampling to decrease aliasing
+// 4 is typically sufficient.  Values must be power of 2.
+func (im *ImageFormat) SetMultisample(nsamp int) {
+	ns := vk.SampleCount1Bit
+	switch nsamp {
+	case 2:
+		ns = vk.SampleCount2Bit
+	case 4:
+		ns = vk.SampleCount4Bit
+	case 8:
+		ns = vk.SampleCount8Bit
+	case 16:
+		ns = vk.SampleCount16Bit
+	case 32:
+		ns = vk.SampleCount32Bit
+	case 64:
+		ns = vk.SampleCount64Bit
+	}
+	im.Samples = ns
+}
