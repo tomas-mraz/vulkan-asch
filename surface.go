@@ -19,38 +19,24 @@ type Surface struct {
 	// pointer to gpu device, for convenience
 	//GPU *vk.GPU
 
-	// device for this surface -- each window surface has its own device, configured for that surface
-	Device vk.Device
-
-	// vulkan handle for surface
-	Surface vk.Surface
-
-	// vulkan handle for swapchain
-	Swapchain vk.Swapchain
-
-	// the Render for this Surface, typically from a System
-	Render *Render
-
-	// has the current swapchain image format and dimensions
-	Format ImageFormat
-
 	// ordered list of surface formats to select
-	DesiredFormats []vk.Format
+	//DesiredFormats []vk.Format
 
 	// the number of frames to maintain in the swapchain -- e.g., 2 = double-buffering, 3 = triple-buffering -- initially set to a requested amount, and after Init reflects the actual number
-	NFrames int
+	//NFrames int
 
 	// Framebuffers representing the visible Image owned by the Surface -- we iterate through these in rendering subsequent frames
-	Frames []*vk.Framebuffer
+	//Frames []*vk.Framebuffer
 
-	// semaphore used internally for waiting on acquisition of the next frame
-	ImageAcquired vk.Semaphore
-
+	Device                 vk.Device    // device for this surface -- each window surface has its own device, configured for that surface
+	Surface                vk.Surface   // vulkan handle for surface
+	Swapchain              vk.Swapchain // vulkan handle for swapchain
+	Render                 *Render      // the Render for this Surface, typically from a System
+	Format                 ImageFormat  // has the current swapchain image format and dimensions
+	RenderFence            vk.Fence     // fence for rendering command running
+	SemaphoreImageAcquired vk.Semaphore // semaphore used internally for waiting on acquisition of the next frame
 	// semaphore that surface user can wait on, will be activated when the image has been acquired in AcquireNextFrame method
-	RenderDone vk.Semaphore
-
-	// fence for rendering command running
-	RenderFence vk.Fence
+	SemaphoreRenderDone vk.Semaphore
 
 	// NeedsConfig is whether the surface needs to be configured again without freeing the swapchain.
 	// This is set internally to allow for correct recovery from sudden minimization events that are
@@ -60,79 +46,34 @@ type Surface struct {
 
 // NewSurface returns a new surface initialized for given GPU and vulkan
 // Surface handle, obtained from a valid window.
-func NewSurface(device *vk.Device, vsurf vk.Surface, swapchain vk.Swapchain) *Surface {
+func NewSurface(device *vk.Device, vsurf vk.Surface, swapchain vk.Swapchain, r VulkanRenderInfo) *Surface {
 	sf := &Surface{}
 	sf.Defaults()
-	sf.Init(device, vsurf, swapchain)
-	return sf
-}
 
-func (sf *Surface) Defaults() {
-	sf.NFrames = 3 // requested, will be updated with actual
-	sf.Format.Defaults()
-	sf.Format.Set(1024, 768, vk.FormatR8g8b8a8Srgb)
-	sf.Format.SetMultisample(4) // good default
-	sf.DesiredFormats = []vk.Format{
-		vk.FormatR8g8b8a8Srgb,
-		vk.FormatB8g8r8a8Srgb,
-	}
-}
-
-// Init initializes the device and all other resources for the surface
-// based on the vulkan surface handle which must be obtained from the
-// OS-specific window, created first (e.g., via glfw)
-func (sf *Surface) Init(device *vk.Device, vsurf vk.Surface, swapchain vk.Swapchain) error {
 	sf.Device = device
 	sf.Surface = vsurf
 	sf.Swapchain = swapchain
 	sf.Render = nil
-	return nil
+	sf.RenderFence = r.DefaultFence()
+	return sf
 }
 
-// ConfigSwapchain configures the swapchain for surface.
-// This assumes that all existing items have been destroyed.
-// It returns false if the swapchain size is zero.
-func (sf *Surface) ConfigSwapchain() bool {
-	return false
-}
-
-// FreeSwapchain frees any existing swawpchain (for ReInit or Destroy)
-func (sf *Surface) FreeSwapchain() {
-}
-
-// ReConfigSwapchain does a re-initialize of swapchain, freeing existing.
-// This must be called when the window is resized.
-// It returns false if the swapchain size is zero.
-func (sf *Surface) ReConfigSwapchain() bool {
-	return false
-}
-
-// SetRender sets the Render and updates frames accordingly
-func (sf *Surface) SetRender(rp *Render) {
-	sf.Render = rp
-	for _, fr := range sf.Frames {
-		fr.ConfigRender(rp)
-	}
-}
-
-// ReConfigFrames re-configures the Famebuffers
-// using exiting settings.  Assumes ConfigSwapchain has been called.
-func (sf *Surface) ReConfigFrames() {
-}
-
-func (sf *Surface) Destroy() {
+func (sf *Surface) Defaults() {
+	sf.Format.Defaults()
+	sf.Format.Set(1024, 768, vk.FormatR8g8b8a8Srgb)
+	sf.Format.SetMultisample(4) // good default
 }
 
 // AcquireNextImage gets the next frame index to render to.
 // It automatically handles any issues with out-of-date swapchain.
-// It triggers the ImageAcquired semaphore when image actually acquired.
+// It triggers the SemaphoreImageAcquired semaphore when image actually acquired.
 // Must call SubmitRender with command to launch command contingent
 // on that semaphore. It returns false if the swapchain size is zero.
 func (sf *Surface) AcquireNextImage() (uint32, bool) {
 	dev := sf.Device.Device
 	for {
-		vk.WaitForFences(dev, 1, []vk.Fence{sf.RenderFence}, vk.True, vk.MaxUint64)
-		vk.ResetFences(dev, 1, []vk.Fence{sf.RenderFence})
+		_ = vk.WaitForFences(dev, 1, []vk.Fence{sf.RenderFence}, vk.True, vk.MaxUint64)
+		_ = vk.ResetFences(dev, 1, []vk.Fence{sf.RenderFence})
 		var idx uint32
 		if sf.NeedsConfig {
 			// we must skip FreeSwapchain for NeedsConfig
@@ -143,14 +84,14 @@ func (sf *Surface) AcquireNextImage() (uint32, bool) {
 				return idx, false
 			}
 			sf.Render.SetSize(sf.Format.Size)
-			sf.ReConfigFrames()
+			//sf.ReConfigFrames()
 			sf.NeedsConfig = false
 			if Debug {
 				fmt.Println("vgpu.Surface.AcquireNextImage: did NeedsConfig update")
 			}
 			continue
 		}
-		ret := vk.AcquireNextImage(dev, sf.Swapchain, vk.MaxUint64, sf.ImageAcquired, vk.NullFence, &idx)
+		ret := vk.AcquireNextImage(dev, sf.Swapchain, vk.MaxUint64, sf.SemaphoreImageAcquired, vk.NullFence, &idx)
 		switch ret {
 		case vk.ErrorOutOfDate, vk.Suboptimal:
 			if !sf.ReConfigSwapchain() {
@@ -177,7 +118,7 @@ func (sf *Surface) AcquireNextImage() (uint32, bool) {
 // to the given command buffer, calling CmdEnd on the buffer first.
 // This buffer triggers the associated Fence logic to control the
 // sequencing of render commands over time.
-// The ImageAcquired semaphore before the command is run.
+// The SemaphoreImageAcquired semaphore before the command is run.
 func (sf *Surface) SubmitRender(cmd vk.CommandBuffer) {
 	CmdEnd(cmd)
 	ret := vk.QueueSubmit(sf.Device.Queue, 1, []vk.SubmitInfo{{
@@ -186,23 +127,23 @@ func (sf *Surface) SubmitRender(cmd vk.CommandBuffer) {
 			vk.PipelineStageFlags(vk.PipelineStageColorAttachmentOutputBit),
 		},
 		WaitSemaphoreCount:   1,
-		PWaitSemaphores:      []vk.Semaphore{sf.ImageAcquired},
+		PWaitSemaphores:      []vk.Semaphore{sf.SemaphoreImageAcquired},
 		CommandBufferCount:   1,
 		PCommandBuffers:      []vk.CommandBuffer{cmd},
 		SignalSemaphoreCount: 1,
-		PSignalSemaphores:    []vk.Semaphore{sf.RenderDone},
+		PSignalSemaphores:    []vk.Semaphore{sf.SemaphoreRenderDone},
 	}}, sf.RenderFence)
 	IfPanic(NewError(ret))
 }
 
-// PresentImage waits on the RenderDone semaphore to present the
+// PresentImage waits on the SemaphoreRenderDone semaphore to present the
 // rendered image to the surface, for the given frame index,
 // as returned by AcquireNextImage.
 func (sf *Surface) PresentImage(frameIndex uint32) error {
 	ret := vk.QueuePresent(sf.Device.Queue, &vk.PresentInfo{
 		SType:              vk.StructureTypePresentInfo,
 		WaitSemaphoreCount: 1,
-		PWaitSemaphores:    []vk.Semaphore{sf.RenderDone},
+		PWaitSemaphores:    []vk.Semaphore{sf.SemaphoreRenderDone},
 		SwapchainCount:     1,
 		PSwapchains:        []vk.Swapchain{sf.Swapchain},
 		PImageIndices:      []uint32{frameIndex},
@@ -219,4 +160,12 @@ func (sf *Surface) PresentImage(frameIndex uint32) error {
 	default:
 		return NewError(ret)
 	}
+}
+
+func (sf *Surface) ConfigSwapchain() bool {
+	return true
+}
+
+func (sf *Surface) ReConfigSwapchain() bool {
+	return true
 }
